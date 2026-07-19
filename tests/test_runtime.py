@@ -53,11 +53,16 @@ def _unsafe_adapter(
 def test_uid_process_limit_adds_agent_headroom_to_existing_uid_processes(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "101").mkdir()
-    (tmp_path / "202").mkdir()
+    first_tasks = tmp_path / "101" / "task"
+    first_tasks.mkdir(parents=True)
+    (first_tasks / "101").mkdir()
+    (first_tasks / "102").mkdir()
+    second_tasks = tmp_path / "202" / "task"
+    second_tasks.mkdir(parents=True)
+    (second_tasks / "202").mkdir()
     (tmp_path / "self").mkdir()
 
-    assert _uid_process_ceiling(7, tmp_path) == 9
+    assert _uid_process_ceiling(7, tmp_path) == 10
 
 
 @pytest.mark.asyncio

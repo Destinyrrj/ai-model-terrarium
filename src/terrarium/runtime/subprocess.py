@@ -668,13 +668,32 @@ def _uid_process_ceiling(requested_headroom: int, proc_root: Path = Path("/proc"
         return requested_headroom
     try:
         uid = os.getuid()
-        current = sum(
-            1
-            for entry in os.scandir(proc_root)
-            if entry.name.isdecimal()
-            and entry.is_dir(follow_symlinks=False)
-            and entry.stat(follow_symlinks=False).st_uid == uid
-        )
+        current = 0
+        with os.scandir(proc_root) as processes:
+            for entry in processes:
+                try:
+                    if (
+                        not entry.name.isdecimal()
+                        or not entry.is_dir(follow_symlinks=False)
+                        or entry.stat(follow_symlinks=False).st_uid != uid
+                    ):
+                        continue
+                    # Linux documents RLIMIT_NPROC as a process limit, but the
+                    # kernel accounting unit is a task (thread), not a PID.
+                    with os.scandir(Path(entry.path) / "task") as tasks:
+                        current += sum(
+                            task.name.isdecimal()
+                            and task.is_dir(follow_symlinks=False)
+                            for task in tasks
+                        )
+                except FileNotFoundError:
+                    # A process may exit while procfs is being sampled.  Omitting
+                    # it cannot create extra agent headroom: its tasks are gone.
+                    continue
+                except OSError:
+                    # If task enumeration alone is hidden, conservatively count
+                    # the visible process leader.
+                    current += 1
     except OSError:
         # Retain fail-closed historical behavior if procfs is unavailable.
         return requested_headroom
