@@ -24,7 +24,7 @@ from terrarium.runtime import (
     parse_structured_json,
     sanitize_terminal_text,
 )
-from terrarium.runtime.subprocess import _make_sandbox_directories
+from terrarium.runtime.subprocess import _make_sandbox_directories, _uid_process_ceiling
 
 
 def _python_command(source: str, *arguments: str) -> CommandSpec:
@@ -47,6 +47,17 @@ def _unsafe_adapter(
         limits=limits,
         environment=environment,
     )
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="requires Linux procfs semantics")
+def test_uid_process_limit_adds_agent_headroom_to_existing_uid_processes(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "101").mkdir()
+    (tmp_path / "202").mkdir()
+    (tmp_path / "self").mkdir()
+
+    assert _uid_process_ceiling(7, tmp_path) == 9
 
 
 @pytest.mark.asyncio

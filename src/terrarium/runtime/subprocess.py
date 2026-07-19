@@ -653,18 +653,47 @@ def _set_resource_limit(kind: int, requested: int) -> None:
     resource.setrlimit(kind, (hard, hard))
 
 
+def _uid_process_ceiling(requested_headroom: int, proc_root: Path = Path("/proc")) -> int:
+    """Translate per-agent headroom to Linux's UID-wide ``RLIMIT_NPROC`` value.
+
+    Linux counts every process owned by the real UID, including unrelated runner
+    services.  Applying ``requested_headroom`` as an absolute value can therefore
+    prevent the adapter itself from spawning even one child on a shared-UID host.
+    The snapshot is intentionally conservative: concurrent host processes can only
+    consume the remaining allowance earlier.  Strong aggregate enforcement remains
+    the external cgroup/container boundary documented in ``SECURITY.md``.
+    """
+
+    if not sys.platform.startswith("linux"):
+        return requested_headroom
+    try:
+        uid = os.getuid()
+        current = sum(
+            1
+            for entry in os.scandir(proc_root)
+            if entry.name.isdecimal()
+            and entry.is_dir(follow_symlinks=False)
+            and entry.stat(follow_symlinks=False).st_uid == uid
+        )
+    except OSError:
+        # Retain fail-closed historical behavior if procfs is unavailable.
+        return requested_headroom
+    return current + requested_headroom
+
+
 def _make_preexec(limits: RuntimeLimits):
     """Return the minimal POSIX child setup used immediately before exec."""
 
     if resource is None:
         return None
+    nproc_ceiling = _uid_process_ceiling(limits.max_processes)
 
     def apply_limits() -> None:
         os.umask(0o077)
         _set_resource_limit(resource.RLIMIT_CPU, limits.cpu_seconds)
         _set_resource_limit(resource.RLIMIT_AS, limits.address_space_bytes)
         if hasattr(resource, "RLIMIT_NPROC"):
-            _set_resource_limit(resource.RLIMIT_NPROC, limits.max_processes)
+            _set_resource_limit(resource.RLIMIT_NPROC, nproc_ceiling)
         _set_resource_limit(resource.RLIMIT_NOFILE, limits.max_open_files)
         _set_resource_limit(resource.RLIMIT_FSIZE, limits.max_file_bytes)
         if hasattr(resource, "RLIMIT_CORE"):
