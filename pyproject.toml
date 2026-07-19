@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-model-terrarium"
+version = "0.1.0"
+description = "A deterministic, auditable world for studying cultural evolution in LLM agents"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Destinyrrj" }]
+dependencies = [
+  "numpy>=2.0,<3",
+  "pydantic>=2.8,<3",
+  "PyYAML>=6.0.2,<7",
+  "tiktoken>=0.8,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "pytest-cov>=6,<7",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+terrarium = "terrarium.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/terrarium"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
+ignore = ["S101"]

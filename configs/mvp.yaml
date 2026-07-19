@@ -1,0 +1,62 @@
+schema_version: 1
+run_id: mvp-local
+seed: 731993
+
+world:
+  valley: valley_a
+  initial_location: valley_a/grove
+  rain_probability: 0.18
+  initial_food_per_location: 24
+  hunger_per_tick: 4
+  starvation_damage: 15
+  # Checked MVP terminal causes are limited to old age and poison.
+  starvation_lethal: false
+  poison_damage: 40
+  collapse_probability: 0.4
+  collapse_lethal: false
+  decoy_birth_tick: 5
+
+population:
+  size: 6
+  generations: 10
+  lifespan_ticks: 30
+  legacy_tokens: 500
+  inherited_legacies: 3
+  tokenizer: cl100k_base
+
+runtime:
+  adapter: mock
+  provider: local
+  model_id: deterministic-mock-v1
+  timeout_seconds: 60
+  max_input_bytes: 65536
+  max_output_bytes: 65536
+  max_stderr_bytes: 16384
+  sandbox:
+    backend: mock
+    network: none
+    acknowledge_unsafe_host_execution: false
+
+budget:
+  max_calls: 10000
+  max_input_tokens: 90000000
+  max_output_tokens: 10000000
+  max_failures: 1000
+
+storage:
+  raw_responses: false
+  max_raw_bytes: 65536
+
+knowledge:
+  - id: red_berries_after_rain
+    statement: Red berries are poisonous after recent rain.
+    kind: true_rule
+    keywords: [red, berries, poisonous, rain]
+  - id: deep_dig_collapse
+    statement: Digging deeper than three levels sometimes causes a collapse.
+    kind: probabilistic_rule
+    keywords: [digging, deeper, three, collapse]
+  - id: raven_death_omen
+    statement: Seeing a raven foretells a nearby death.
+    kind: decoy
+    keywords: [raven, death]
