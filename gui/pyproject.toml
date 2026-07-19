@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-model-terrarium-gui"
+version = "0.1.0"
+description = "Loopback scientific GUI for deterministic AI Model Terrarium runs"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Destinyrrj" }]
+dependencies = [
+  "ai-model-terrarium==0.1.0",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.scripts]
+terrarium-gui = "terrarium_gui.cli:main"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "pytest-cov>=6,<7",
+  "ruff>=0.9,<1",
+]
+
+[tool.uv]
+# Keep this environment and lock separate because root uv.lock is a sealed-run
+# replay input.
+
+[tool.uv.sources]
+ai-model-terrarium = { path = "..", editable = true }
+
+[tool.hatch.build]
+# Hatch cannot infer an editable import path from the force-included sibling
+# package below.  Point development installs at the real source tree so
+# ``uv run --project gui`` always executes the current workspace code.
+dev-mode-dirs = ["../src"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "README.md",
+  "hatch_build.py",
+  "pyproject.toml",
+  "frontend/index.html",
+  "frontend/package.json",
+  "frontend/package-lock.json",
+  "frontend/tsconfig*.json",
+  "frontend/vite.config.ts",
+  "frontend/vitest.config.ts",
+  "frontend/src/**",
+]
+exclude = [
+  "frontend/node_modules/**",
+  "frontend/dist/**",
+  ".venv/**",
+  "dist/**",
+  "**/__pycache__/**",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Gives Hatch an explicit selection in editable mode; the custom hook replaces
+# ordinary wheel contents with the real workspace or self-contained sdist source.
+"pyproject.toml" = "_terrarium_gui_build.marker"

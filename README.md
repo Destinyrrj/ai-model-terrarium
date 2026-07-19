@@ -75,6 +75,22 @@ uv run terrarium measure runs/mvp configs/mvp.yaml --output measurements/mvp
 uv run pytest
 ```
 
+## Scientific GUI
+
+An optional loopback-only FastAPI + React interface provides schema-driven
+configuration, managed start/stop/resume, committed-event SSE, read-only
+telemetry, ECharts analysis views, and asynchronous audit tools.  GUI code is a
+sibling package and does not modify the sealed `src/terrarium/` mechanics tree.
+
+```bash
+UV_CACHE_DIR=/tmp/terrarium-uv-cache uv sync --project gui --group dev
+cd gui/frontend && npm ci && npm run build && cd ../..
+uv run --project gui terrarium-gui --runs-root runs --configs-dir configs
+```
+
+Open the one-time loopback URL printed by the command.  Operational and
+security details are in [`docs/gui.md`](docs/gui.md).
+
 The checked-in MVP config uses deterministic mock agents and does not contact a
 model provider.  A real adapter is a separate, pinned experiment configuration;
 the executable digest, model ID and sandbox policy are sealed into the run

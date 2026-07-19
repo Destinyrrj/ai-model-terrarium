@@ -2,6 +2,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.gui/
+.terrarium-gui-artifacts/
+gui/frontend/node_modules/
+gui/frontend/dist/
+src/terrarium_gui/static/
 .ruff_cache/
 .coverage
 htmlcov/
