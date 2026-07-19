@@ -208,7 +208,7 @@ a { color: inherit; }
 .modal-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Configuration workbench */
-.config-layout { display: grid; grid-template-columns: 238px minmax(0, 1fr); min-height: 760px; border: 1px solid var(--border); border-radius: 13px; background: rgba(8, 20, 18, .7); overflow: hidden; box-shadow: var(--shadow); }
+.config-layout { display: grid; grid-template-columns: 238px minmax(0, 1fr); min-height: 760px; border: 1px solid var(--border); border-radius: 13px; background: rgba(8, 20, 18, .7); overflow: clip; box-shadow: var(--shadow); }
 .config-sidebar { padding: 18px 10px; border-right: 1px solid var(--border); background: rgba(5, 14, 13, .46); }
 .sidebar-title { display: block; margin: 0 10px 14px; color: var(--faint); font: 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 .config-list { display: grid; gap: 3px; }
@@ -220,7 +220,7 @@ a { color: inherit; }
 .config-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .config-list small { color: var(--faint); font: 8px var(--mono); text-transform: uppercase; }
 .config-workbench { min-width: 0; }
-.workbench-toolbar { min-height: 72px; padding: 11px 18px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); background: rgba(10, 24, 22, .82); position: sticky; top: 68px; z-index: 20; }
+.workbench-toolbar { min-height: 72px; padding: 11px 18px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); background: rgba(10, 24, 22, .94); backdrop-filter: blur(12px); position: sticky; top: 68px; z-index: 20; }
 .compact-field { width: min(300px, 35vw); grid-template-columns: auto minmax(150px, 1fr); align-items: center; }
 .compact-field > span { white-space: nowrap; }
 .toolbar-actions { margin-left: auto; display: flex; gap: 7px; }
@@ -244,7 +244,7 @@ a { color: inherit; }
 .acknowledgements input { margin-top: 2px; accent-color: var(--blue); }
 .acknowledgements span { display: grid; gap: 4px; font-size: 10px; line-height: 1.35; }
 .acknowledgements small { color: var(--faint); font-size: 8px; }
-.editor-split { margin: 0 18px 18px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.editor-split { margin: 0 18px 18px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); border: 1px solid var(--border); border-radius: 10px; overflow: clip; }
 .form-editor, .yaml-editor { min-width: 0; }
 .yaml-editor { border-left: 1px solid var(--border); background: rgba(4,12,11,.65); position: relative; }
 .editor-heading { height: 65px; padding: 13px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); background: rgba(10,23,21,.85); }

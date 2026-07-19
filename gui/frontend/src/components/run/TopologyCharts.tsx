@@ -304,6 +304,9 @@ export function AgentGantt({ agents, currentTick = 0, page: serverPage }: {
     (maximum, agent) => Math.max(maximum, agent.died_tick ?? currentTick),
     Math.max(currentTick, 1),
   );
+  // Show a readable slice by default; the rest stays reachable via the zoom slider.
+  const GANTT_VISIBLE_ROWS = 28;
+  const zoomEndIndex = Math.min(sorted.length - 1, GANTT_VISIBLE_ROWS - 1);
   const option = {
     animation: false,
     grid: { ...baseGrid, left: 120, top: 24, bottom: 40 },
@@ -320,7 +323,7 @@ export function AgentGantt({ agents, currentTick = 0, page: serverPage }: {
     },
     xAxis: { ...baseAxis, type: "value", min: 0, max: maxTick, name: "tick" },
     yAxis: { ...baseAxis, type: "category", inverse: true, data: sorted.map((agent) => shortId(agent.id, 14)), axisLabel: { ...baseAxis.axisLabel, width: 100, overflow: "truncate" } },
-    dataZoom: sorted.length > 18 ? [{ type: "inside", yAxisIndex: 0 }, { type: "slider", yAxisIndex: 0, width: 8, right: 5, borderColor: "transparent", fillerColor: "rgba(79,180,194,.18)" }] : undefined,
+    dataZoom: sorted.length > 18 ? [{ type: "inside", yAxisIndex: 0, startValue: 0, endValue: zoomEndIndex }, { type: "slider", yAxisIndex: 0, startValue: 0, endValue: zoomEndIndex, width: 8, right: 5, borderColor: "transparent", fillerColor: "rgba(79,180,194,.18)" }] : undefined,
     series: [{
       type: "custom",
       renderItem: timelineRenderItem,

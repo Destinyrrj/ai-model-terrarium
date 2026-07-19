@@ -1,5 +1,5 @@
 import type { EChartsOption } from "echarts";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { asBoolean, asNumber, asRecord, asString, firstNumber, unwrapArray } from "../../api/normalize";
 import { formatInteger, formatPercent, humanize } from "../../lib/format";
 import { baseAxis, baseGrid, baseTooltip, chartTheme, EChart } from "../EChart";
@@ -39,7 +39,7 @@ function budgetMetrics(value: unknown): GaugeMetric[] {
   });
 }
 
-export function BudgetGauges({ data }: { data: unknown }): React.JSX.Element {
+export const BudgetGauges = memo(function BudgetGauges({ data }: { data: unknown }): React.JSX.Element {
   const metrics = budgetMetrics(data);
   const option = useMemo<EChartsOption>(() => ({
     animationDuration: 350,
@@ -85,7 +85,7 @@ export function BudgetGauges({ data }: { data: unknown }): React.JSX.Element {
       </div>
     </div>
   );
-}
+});
 
 interface TokenRow {
   tick: number;
@@ -110,7 +110,7 @@ function tokenRows(value: unknown): TokenRow[] {
   });
 }
 
-export function TokenChart({ data }: { data: unknown }): React.JSX.Element {
+export const TokenChart = memo(function TokenChart({ data }: { data: unknown }): React.JSX.Element {
   const rows = tokenRows(data);
   const ticks = [...new Set(rows.map((row) => row.tick))].sort((a, b) => a - b);
   const window = asRecord(asRecord(data).window);
@@ -184,7 +184,7 @@ export function TokenChart({ data }: { data: unknown }): React.JSX.Element {
       </div>
     </div>
   );
-}
+});
 
 interface SurvivalRow {
   generation: number;
@@ -213,7 +213,7 @@ function survivalRows(value: unknown): SurvivalRow[] {
   });
 }
 
-export function SurvivalCurves({ data }: { data: unknown }): React.JSX.Element {
+export const SurvivalCurves = memo(function SurvivalCurves({ data }: { data: unknown }): React.JSX.Element {
   const rows = useMemo(() => survivalRows(data), [data]);
   const dimensions = useMemo(() => {
     const bases: string[] = [];
@@ -299,7 +299,7 @@ export function SurvivalCurves({ data }: { data: unknown }): React.JSX.Element {
       ) : <EChart option={option} height={340} ariaLabel={`Выживание знаний по поколениям, ${activeBasis ?? "unknown basis"}, ${activeChannel ?? "unknown channel"}`} />}
     </div>
   );
-}
+});
 
 interface BehaviorRow {
   generation: number;
@@ -326,7 +326,7 @@ function behaviorRows(value: unknown): BehaviorRow[] {
   }).sort((left, right) => left.generation - right.generation);
 }
 
-export function BehaviorCurves({ data }: { data: unknown }): React.JSX.Element {
+export const BehaviorCurves = memo(function BehaviorCurves({ data }: { data: unknown }): React.JSX.Element {
   const rows = behaviorRows(data);
   if (!rows.length) return <EmptyState title="Поведенческие метрики отсутствуют" detail="Measure рассчитает рискованные действия по поколениям." />;
   if (rows.length < 3) return (
@@ -355,7 +355,7 @@ export function BehaviorCurves({ data }: { data: unknown }): React.JSX.Element {
       <p className="chart-note">Rate рассчитан внутри поколения; столбцы показывают наблюдённые события вреда. Agents: {rows.map((row) => `G${row.generation}=${row.agents}`).join(", ")}.</p>
     </div>
   );
-}
+});
 
 export function MetricRawPreview({ name, data }: { name: string; data: unknown }): React.JSX.Element {
   const rows = unwrapArray(data);
