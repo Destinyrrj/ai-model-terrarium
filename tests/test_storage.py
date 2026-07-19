@@ -429,3 +429,12 @@ def test_bad_tick_state_and_reserved_events_do_not_touch_log(tmp_path: Path) -> 
         with pytest.raises(StorageError, match="rng_state"):
             store.commit_tick(0, [], {"rng_state": "not an object"})
         assert (run_dir / EVENT_LOG_NAME).stat().st_size == before
+
+
+def test_raw_response_with_lone_surrogate_is_dropped_not_a_crash(tmp_path: Path) -> None:
+    # json.loads accepts "\udc80" escapes, but the result cannot encode to
+    # UTF-8.  Raw capture must reject it as RawResponseError so the
+    # orchestrator records raw_response_dropped instead of failing the tick.
+    with EventStore(tmp_path / "run", "surrogate-run", max_raw_bytes=4096) as store:
+        with pytest.raises(RawResponseError, match="encodable"):
+            store.append_raw(0, "agent-1", 1, {"text": "\udc80"})

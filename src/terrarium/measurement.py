@@ -1,8 +1,16 @@
-"""Read-only MVP knowledge-survival measurements.
+"""Read-only MVP knowledge-survival and behavioral-adoption measurements.
 
 This baseline is deliberately offline and deterministic.  It exposes a
 classifier protocol so an embedding+NLI implementation can replace the lexical
 baseline without changing the world or its logs.
+
+Textual survival alone cannot distinguish a lineage that *repeats* a rule from
+one that *obeys* it.  The behavioral curve therefore reads the same committed
+event log and reports, per generation, how often agents performed the risky
+acts the hidden rules punish: eating a red berry inside the post-rain poison
+window and digging past the collapse depth.  Falling risk rates across
+generations alongside surviving legacy text is the selection signal the MVP
+gate asks for; surviving text with flat risk rates is parroting.
 """
 
 from __future__ import annotations
@@ -22,10 +30,17 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import KnowledgeConfig
+from .domain import WeatherState
 from .events import strict_json_loads
 
 _MAX_LEGACY_TEXT_CHARS = 1_000_000
 LEXICAL_BASELINE_ID = "lexical-keyword-baseline-v1"
+
+# Mirrors of the engine's hidden-rule constants used only for read-only replayed
+# classification of committed events; changing WorldEngine semantics requires a
+# schema version and a matching update here.
+DEFAULT_RAIN_WINDOW_TICKS = 3
+DEFAULT_SAFE_DIG_DEPTH = 3
 
 
 class Stance(StrEnum):
@@ -81,6 +96,29 @@ class SurvivalPoint:
     contradicts: int
     silent: int
     survival_rate: float
+
+
+@dataclass(frozen=True, slots=True)
+class BehaviorPoint:
+    """Per-generation realized behavior against the two testable hidden rules.
+
+    ``risky_berry_eats`` counts red berries eaten while the tick-start weather
+    satisfied the engine's post-rain poison window; ``deep_digs`` counts digs
+    past the safe depth.  Rates divide by that generation's own attempts, so a
+    generation that never eats berries reports a rate of 0.0 with a zero
+    denominator visible in the counts.
+    """
+
+    generation: int
+    agents: int
+    berry_eats: int
+    risky_berry_eats: int
+    risky_eat_rate: float
+    poison_damage_events: int
+    digs: int
+    deep_digs: int
+    deep_dig_rate: float
+    collapse_events: int
 
 
 def iter_committed_events(path: str | Path) -> Iterable[dict[str, object]]:
@@ -247,6 +285,155 @@ def extract_inherited_exposures(
     return exposures
 
 
+def behavior_adoption_curve(
+    events: Iterable[Mapping[str, object]],
+    *,
+    rain_window_ticks: int = DEFAULT_RAIN_WINDOW_TICKS,
+    safe_dig_depth: int = DEFAULT_SAFE_DIG_DEPTH,
+    expected_generations: Iterable[int] | None = None,
+) -> list[BehaviorPoint]:
+    """Compute per-generation risk-taking rates from committed event envelopes.
+
+    The stream must contain the run's ``agent_spawned`` and ``state_checkpoint``
+    envelopes: generations come from spawn events and the poison window for an
+    ``ate`` envelope at tick N is judged against the tick-start weather, i.e.
+    the checkpoint committed for tick N-1.  Like the inheritance extractor,
+    this is fail-closed: an actor without a spawn record or an eat without a
+    prior weather checkpoint raises instead of silently under-counting risk.
+    """
+
+    if isinstance(rain_window_ticks, bool) or type(rain_window_ticks) is not int:
+        raise ValueError("rain_window_ticks must be an integer")
+    if rain_window_ticks < 1:
+        raise ValueError("rain_window_ticks must be positive")
+    if isinstance(safe_dig_depth, bool) or type(safe_dig_depth) is not int:
+        raise ValueError("safe_dig_depth must be an integer")
+    if safe_dig_depth < 0:
+        raise ValueError("safe_dig_depth cannot be negative")
+
+    generation_of: dict[str, int] = {}
+    agents_per_generation: dict[int, int] = defaultdict(int)
+    weather_by_tick: dict[int, WeatherState] = {}
+    counters: dict[int, dict[str, int]] = defaultdict(
+        lambda: {
+            "berry_eats": 0,
+            "risky_berry_eats": 0,
+            "poison_damage_events": 0,
+            "digs": 0,
+            "deep_digs": 0,
+            "collapse_events": 0,
+        }
+    )
+
+    def actor_generation(payload: Mapping[str, object], event_type: str) -> int:
+        agent_id = payload.get("agent_id")
+        if not isinstance(agent_id, str):
+            raise ValueError(f"{event_type} payload has no valid agent_id")
+        generation = generation_of.get(agent_id)
+        if generation is None:
+            raise ValueError(f"{event_type} references an agent without a spawn record")
+        return generation
+
+    for event in events:
+        event_type = event.get("type")
+        payload = event.get("payload")
+        if event_type == "agent_spawned":
+            if not isinstance(payload, Mapping):
+                raise ValueError("agent_spawned payload must be an object")
+            agent_id = payload.get("agent_id")
+            generation = payload.get("generation")
+            if (
+                not isinstance(agent_id, str)
+                or not 1 <= len(agent_id) <= 96
+                or type(generation) is not int
+                or generation < 0
+            ):
+                raise ValueError("agent_spawned identity fields are invalid")
+            if agent_id in generation_of:
+                raise ValueError("agent_spawned redefines an existing agent")
+            generation_of[agent_id] = generation
+            agents_per_generation[generation] += 1
+            continue
+
+        if event_type == "state_checkpoint":
+            tick = event.get("tick")
+            if type(tick) is not int or tick < 0:
+                raise ValueError("state_checkpoint envelope has no valid tick")
+            if not isinstance(payload, Mapping):
+                raise ValueError("state_checkpoint payload must be an object")
+            state = payload.get("state")
+            world = state.get("world") if isinstance(state, Mapping) else None
+            weather = world.get("weather") if isinstance(world, Mapping) else None
+            if weather is None:
+                raise ValueError("state_checkpoint does not contain world weather")
+            weather_by_tick[tick] = WeatherState.model_validate(weather)
+            continue
+
+        if not isinstance(payload, Mapping):
+            continue
+
+        if event_type == "ate":
+            if payload.get("item") != "red_berry":
+                continue
+            generation = actor_generation(payload, "ate")
+            tick = event.get("tick")
+            if type(tick) is not int or tick < 1:
+                raise ValueError("ate envelope has no valid tick")
+            tick_start_weather = weather_by_tick.get(tick - 1)
+            if tick_start_weather is None:
+                raise ValueError("ate event precedes any tick-start weather checkpoint")
+            counters[generation]["berry_eats"] += 1
+            if tick_start_weather.rained_last(rain_window_ticks):
+                counters[generation]["risky_berry_eats"] += 1
+        elif event_type == "dug":
+            generation = actor_generation(payload, "dug")
+            depth = payload.get("depth")
+            if type(depth) is not int or depth < 1:
+                raise ValueError("dug payload has no valid depth")
+            counters[generation]["digs"] += 1
+            if depth > safe_dig_depth:
+                counters[generation]["deep_digs"] += 1
+        elif event_type == "damage":
+            if payload.get("cause") == "poison":
+                counters[actor_generation(payload, "damage")]["poison_damage_events"] += 1
+        elif event_type == "tunnel_collapsed":
+            counters[actor_generation(payload, "tunnel_collapsed")]["collapse_events"] += 1
+
+    generations = _expected_generations(expected_generations)
+    generations.update(agents_per_generation)
+    generations.update(counters)
+
+    points: list[BehaviorPoint] = []
+    for generation in sorted(generations):
+        values = counters.get(generation)
+        if values is None:
+            values = {
+                "berry_eats": 0,
+                "risky_berry_eats": 0,
+                "poison_damage_events": 0,
+                "digs": 0,
+                "deep_digs": 0,
+                "collapse_events": 0,
+            }
+        berry_eats = values["berry_eats"]
+        digs = values["digs"]
+        points.append(
+            BehaviorPoint(
+                generation=generation,
+                agents=agents_per_generation.get(generation, 0),
+                berry_eats=berry_eats,
+                risky_berry_eats=values["risky_berry_eats"],
+                risky_eat_rate=values["risky_berry_eats"] / berry_eats if berry_eats else 0.0,
+                poison_damage_events=values["poison_damage_events"],
+                digs=digs,
+                deep_digs=values["deep_digs"],
+                deep_dig_rate=values["deep_digs"] / digs if digs else 0.0,
+                collapse_events=values["collapse_events"],
+            )
+        )
+    return points
+
+
 def authored_measurement_records(
     legacies: Iterable[Mapping[str, object]],
 ) -> list[dict[str, object]]:
@@ -359,13 +546,29 @@ def _expected_bases(values: Iterable[str | MeasurementBasis] | None) -> set[str]
 def write_measurements(points: Iterable[SurvivalPoint], output_dir: str | Path) -> None:
     """Write to a separate output tree; never mutate a run directory."""
 
+    columns = list(SurvivalPoint.__dataclass_fields__)
+    _write_export_pair(points, columns, output_dir, "knowledge-survival")
+
+
+def write_behavior_measurements(points: Iterable[BehaviorPoint], output_dir: str | Path) -> None:
+    """Write the behavioral adoption curve next to the knowledge survival export."""
+
+    columns = list(BehaviorPoint.__dataclass_fields__)
+    _write_export_pair(points, columns, output_dir, "behavior-adoption")
+
+
+def _write_export_pair(
+    points: Iterable[SurvivalPoint | BehaviorPoint],
+    columns: list[str],
+    output_dir: str | Path,
+    base_name: str,
+) -> None:
     destination = Path(output_dir).absolute()
     rows = [asdict(point) for point in points]
     json_data = (
         json.dumps(rows, indent=2, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n"
     ).encode("utf-8")
     csv_buffer = io.StringIO(newline="")
-    columns = list(SurvivalPoint.__dataclass_fields__)
     writer = csv.DictWriter(csv_buffer, fieldnames=columns)
     writer.writeheader()
     writer.writerows(rows)
@@ -374,8 +577,8 @@ def write_measurements(points: Iterable[SurvivalPoint], output_dir: str | Path) 
     directory_fd = _open_output_directory(destination)
     try:
         # JSON is the commit marker for a matched export pair.
-        _atomic_write(directory_fd, "knowledge-survival.csv", csv_data)
-        _atomic_write(directory_fd, "knowledge-survival.json", json_data)
+        _atomic_write(directory_fd, f"{base_name}.csv", csv_data)
+        _atomic_write(directory_fd, f"{base_name}.json", json_data)
     finally:
         os.close(directory_fd)
 

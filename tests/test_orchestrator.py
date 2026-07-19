@@ -130,3 +130,51 @@ async def test_agent_remembers_own_actions_and_lethal_visible_outcome_for_deathb
     serialized = json.dumps(deathbed, sort_keys=True)
     assert "old_age" not in serialized
     assert "death_cause" not in serialized
+
+
+class _WhitespaceLegacyAdapter(DeterministicMockAdapter):
+    """Reports a successful deathbed call whose text truncates to whitespace."""
+
+    def __init__(self, context: AgentContext) -> None:
+        super().__init__(context.agent_id, context.inherited_legacy_texts, seed=13)
+
+    async def write_legacy(
+        self,
+        budget_tokens: int,
+        context: dict[str, object] | None = None,
+    ) -> AdapterResult:
+        result = await super().write_legacy(budget_tokens, context)
+        return AdapterResult.success(
+            {"text": "\n\n\nHelpful advice here"},
+            usage=result.usage,
+            metadata=result.metadata,
+        )
+
+
+@pytest.mark.asyncio
+async def test_legacy_creation_failure_is_accounted_as_a_failed_call(tmp_path: Path) -> None:
+    data = load_config("configs/mvp.yaml").model_dump(mode="json")
+    data["run_id"] = "whitespace-legacy"
+    data["population"].update(
+        {"size": 1, "generations": 2, "lifespan_ticks": 3, "legacy_tokens": 1}
+    )
+    config = RunConfig.model_validate(data)
+    run_dir = tmp_path / "run"
+    runner = ExperimentRunner(config, run_dir, adapter_factory=_WhitespaceLegacyAdapter)
+    try:
+        await runner.run(max_ticks=4)
+    finally:
+        await runner.close()
+
+    events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]
+    deathbed_usage = [
+        event["payload"]
+        for event in events
+        if event["type"] == "token_usage" and event["payload"]["operation"] == "deathbed"
+    ]
+    assert deathbed_usage and all(item["success"] is False for item in deathbed_usage)
+    assert any(
+        event["type"] == "deathbed_failed" and event["payload"]["reason"] == "invalid_legacy"
+        for event in events
+    )
+    assert not any(event["type"] == "legacy_written" for event in events)

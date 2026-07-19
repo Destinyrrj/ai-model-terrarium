@@ -1,8 +1,8 @@
-"""Stateful Claude Code adapter using Claude Code's own headless mode.
+"""Checkpoint-authoritative Claude Code adapter using official headless mode.
 
 This is intentionally not an Anthropic API wrapper.  It invokes the installed
-``claude`` binary, lets that binary own authentication and session persistence,
-and gives the model no tools.  OAuth users must not add ``--bare``: current
+``claude`` binary, lets that binary own authentication, and gives the model no
+tools. OAuth users must not add ``--bare``: current
 Claude Code explicitly disables OAuth/keychain reads in bare mode.
 """
 
@@ -15,13 +15,19 @@ import json
 import os
 import signal
 import tempfile
-import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from .base import AdapterResult, AdapterStatus, JSONValue
-from .subprocess import RuntimeLimits, parse_structured_json, sanitize_terminal_text
+from .subprocess import (
+    RuntimeLimits,
+    _feed_stdin,
+    _OutputLimitExceeded,
+    _read_bounded,
+    parse_structured_json,
+    sanitize_terminal_text,
+)
 
 _ACTION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -78,11 +84,12 @@ _TEXT_SCHEMA: dict[str, Any] = {
 
 
 class ClaudeCodeAgentAdapter:
-    """One Claude Code session per terrarium agent.
+    """Run each inference solely from the committed Terrarium context.
 
-    Session UUIDs are deterministic, so a runner resumed from its authoritative
-    checkpoint reconnects to the same Claude Code conversation without storing
-    provider state in the experiment directory.
+    Claude Code session persistence cannot participate in Terrarium's atomic
+    tick commit. Keeping hidden provider history would therefore create a
+    split-brain after a timeout or crash. Every call is deliberately ephemeral;
+    the complete checkpointed AgentContext is the sole lifetime memory.
     """
 
     def __init__(
@@ -101,25 +108,14 @@ class ClaudeCodeAgentAdapter:
         self.executable = str(path)
         self.model = model
         self.agent_id = context.agent_id
-        self.session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"terrarium:{run_id}:{self.agent_id}"))
-        self._resume = bool(context.transitions)
+        self.run_id = run_id
         self.limits = limits or RuntimeLimits()
         self._closed = False
         self._lock = asyncio.Lock()
         self._active: asyncio.subprocess.Process | None = None
 
     async def act(self, observation: dict[str, Any]) -> AdapterResult:
-        # The first turn establishes persona and inheritance.  Thereafter the CC
-        # session already owns that history, so only the newly observed turn is sent.
-        prompt: JSONValue = (
-            observation
-            if not self._resume
-            else {
-                "instructions": observation.get("instructions"),
-                "turn": observation.get("turn"),
-            }
-        )
-        return await self._call("act", prompt, _ACTION_SCHEMA)
+        return await self._call("act", observation, _ACTION_SCHEMA)
 
     async def write_legacy(
         self, budget_tokens: int, context: dict[str, Any] | None = None
@@ -128,11 +124,10 @@ class ClaudeCodeAgentAdapter:
             "operation": "write_legacy",
             "budget_tokens": budget_tokens,
             "instructions": (
-                "Use your remembered life to write the final record. "
-                "Return only structured data."
+                "Use your remembered life to write the final record. Return only structured data."
             ),
         }
-        if not self._resume and context is not None:
+        if context is not None:
             prompt["context"] = context
         return await self._call("write_legacy", prompt, _TEXT_SCHEMA)
 
@@ -143,14 +138,12 @@ class ClaudeCodeAgentAdapter:
         return await self._call("answer_survey", probe, {"type": "object"})
 
     def _argv(self, schema: Mapping[str, Any]) -> tuple[str, ...]:
-        session = (
-            ("--resume", self.session_id) if self._resume else ("--session-id", self.session_id)
-        )
         return (
             self.executable,
             "-p",
             "--output-format",
             "json",
+            "--no-session-persistence",
             "--model",
             self.model,
             "--safe-mode",
@@ -164,7 +157,6 @@ class ClaudeCodeAgentAdapter:
             "dontAsk",
             "--json-schema",
             json.dumps(schema, sort_keys=True, separators=(",", ":")),
-            *session,
         )
 
     async def _call(
@@ -198,33 +190,35 @@ class ClaudeCodeAgentAdapter:
                     self._active = process
                     try:
                         stdout, stderr = await asyncio.wait_for(
-                            process.communicate(request), timeout=self.limits.timeout_seconds
+                            self._communicate_bounded(process, request),
+                            timeout=self.limits.timeout_seconds,
                         )
                     except TimeoutError:
-                        await self._terminate(process)
                         return self._failure(
                             AdapterStatus.TIMEOUT,
                             "claude_timeout",
                             "Claude Code timed out",
                             retryable=True,
                         )
+                    except _OutputLimitExceeded:
+                        return self._failure(
+                            AdapterStatus.OUTPUT_LIMIT,
+                            "claude_output_limit",
+                            "Claude Code output exceeded limit",
+                        )
                     finally:
+                        # The orchestrator's own timeout cancels this coroutine
+                        # rather than raising TimeoutError here, so the process
+                        # must be reaped on *every* non-clean exit, shielded
+                        # from further cancellation.
+                        if process.returncode is None:
+                            await asyncio.shield(self._terminate(process))
                         self._active = None
             except OSError:
                 return self._failure(
                     AdapterStatus.PROCESS_ERROR,
                     "claude_spawn_failed",
                     "Claude Code could not start",
-                )
-
-            if (
-                len(stdout) > self.limits.max_stdout_bytes
-                or len(stderr) > self.limits.max_stderr_bytes
-            ):
-                return self._failure(
-                    AdapterStatus.OUTPUT_LIMIT,
-                    "claude_output_limit",
-                    "Claude Code output exceeded limit",
                 )
             safe_diagnostic = (
                 sanitize_terminal_text(stderr, max_chars=self.limits.max_safe_log_chars) or None
@@ -256,7 +250,6 @@ class ClaudeCodeAgentAdapter:
                     "Claude Code returned an invalid result envelope",
                     raw_text=safe_diagnostic,
                 )
-            self._resume = True
             return AdapterResult.success(
                 result[0],
                 raw_text=None,
@@ -264,10 +257,37 @@ class ClaudeCodeAgentAdapter:
                 unsafe_host_execution=True,
                 metadata={
                     "adapter": "claude-code",
-                    "session_id": self.session_id,
+                    "memory_mode": "checkpoint",
                     "total_cost_usd": result[2],
                 },
             )
+
+    async def _communicate_bounded(
+        self, process: asyncio.subprocess.Process, request: bytes
+    ) -> tuple[bytes, bytes]:
+        """Feed stdin and read both pipes with incremental output limits.
+
+        Unlike ``process.communicate``, a runaway CLI cannot buffer unbounded
+        bytes into orchestrator memory: reading aborts fail-closed with
+        ``_OutputLimitExceeded`` as soon as either stream passes its limit.
+        """
+
+        stdout_task = asyncio.create_task(
+            _read_bounded(process.stdout, self.limits.max_stdout_bytes, "stdout")
+        )
+        stderr_task = asyncio.create_task(
+            _read_bounded(process.stderr, self.limits.max_stderr_bytes, "stderr")
+        )
+        stdin_task = asyncio.create_task(_feed_stdin(process.stdin, request))
+        tasks = (stdout_task, stderr_task, stdin_task)
+        try:
+            stdout, stderr, _ = await asyncio.gather(*tasks)
+            await process.wait()
+            return stdout, stderr
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @staticmethod
     def _extract_result(
@@ -329,7 +349,7 @@ class ClaudeCodeAgentAdapter:
             retryable=retryable,
             raw_text=raw_text,
             unsafe_host_execution=True,
-            metadata={"adapter": "claude-code", "session_id": self.session_id},
+            metadata={"adapter": "claude-code", "memory_mode": "checkpoint"},
         )
 
     async def _terminate(self, process: asyncio.subprocess.Process) -> None:

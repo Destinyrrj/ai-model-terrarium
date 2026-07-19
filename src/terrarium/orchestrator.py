@@ -966,17 +966,14 @@ class ExperimentRunner:
             )
             if raw_event is not None:
                 events.append(raw_event)
-            events.append(
-                await self._account_result(
-                    agent_id=agent_id,
-                    operation="deathbed",
-                    result=result,
-                    success=valid_text,
-                )
-            )
+            legacy: Legacy | None = None
             if valid_text:
                 assert isinstance(payload, dict) and isinstance(payload["text"], str)
                 try:
+                    # Creation runs before accounting: model-controlled text can
+                    # still fail here (whitespace-only after token truncation),
+                    # and that must count against the fail-closed failure budget
+                    # instead of being logged as a successful call.
                     legacy = inheritance.create(
                         author=agent_id,
                         generation=lineage.generation,
@@ -988,30 +985,38 @@ class ExperimentRunner:
                     )
                 except (ValidationError, TypeError, ValueError):
                     valid_text = False
-                else:
-                    lineages[lineage.lineage_id] = LineageState(
-                        lineage_id=lineage.lineage_id,
-                        slot=lineage.slot,
-                        generation=lineage.generation,
-                        current_agent_id=lineage.current_agent_id,
-                        legacy_ids=(*lineage.legacy_ids, legacy.id),
-                    )
-                    lineage_by_agent[agent_id] = lineages[lineage.lineage_id]
-                    events.append(
-                        {
-                            "type": "legacy_written",
-                            "payload": {
-                                "legacy_id": legacy.id,
-                                "author_agent_id": legacy.author,
-                                "generation": legacy.generation,
-                                "generation_id": f"generation_{legacy.generation:05d}",
-                                "valley": legacy.valley,
-                                "channel": legacy.channel.value,
-                                "text": legacy.text,
-                                "parent_legacy_ids": list(legacy.parent_legacy_ids),
-                            },
-                        }
-                    )
+            events.append(
+                await self._account_result(
+                    agent_id=agent_id,
+                    operation="deathbed",
+                    result=result,
+                    success=valid_text,
+                )
+            )
+            if legacy is not None:
+                lineages[lineage.lineage_id] = LineageState(
+                    lineage_id=lineage.lineage_id,
+                    slot=lineage.slot,
+                    generation=lineage.generation,
+                    current_agent_id=lineage.current_agent_id,
+                    legacy_ids=(*lineage.legacy_ids, legacy.id),
+                )
+                lineage_by_agent[agent_id] = lineages[lineage.lineage_id]
+                events.append(
+                    {
+                        "type": "legacy_written",
+                        "payload": {
+                            "legacy_id": legacy.id,
+                            "author_agent_id": legacy.author,
+                            "generation": legacy.generation,
+                            "generation_id": f"generation_{legacy.generation:05d}",
+                            "valley": legacy.valley,
+                            "channel": legacy.channel.value,
+                            "text": legacy.text,
+                            "parent_legacy_ids": list(legacy.parent_legacy_ids),
+                        },
+                    }
+                )
             if not valid_text:
                 events.append(
                     {

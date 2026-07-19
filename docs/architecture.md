@@ -41,7 +41,8 @@ log without changing the latest checkpoint.
 - `InheritanceManager`: immutable, tokenizer-bounded texts and provenance; it
   receives RNG draws from the engine rather than owning a generator.
 - `EventStore`: durable canonical truth and rebuildable query projection.
-- `measurement`: read-only offline classification and survival curves.
+- `measurement`: read-only offline classification, survival curves and
+  behavioral-adoption curves.
 - `viewer`: allowlisted static projection, never raw responses.
 
 ## Reproducibility levels

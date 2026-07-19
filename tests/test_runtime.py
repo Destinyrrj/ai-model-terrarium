@@ -24,7 +24,11 @@ from terrarium.runtime import (
     parse_structured_json,
     sanitize_terminal_text,
 )
-from terrarium.runtime.subprocess import _make_sandbox_directories, _uid_process_ceiling
+from terrarium.runtime.subprocess import (
+    _make_sandbox_directories,
+    _terminate_process_group,
+    _uid_process_ceiling,
+)
 
 
 def _python_command(source: str, *arguments: str) -> CommandSpec:
@@ -352,6 +356,25 @@ async def test_timeout_terms_descendants_then_kills_group(tmp_path: Path) -> Non
     assert child_marker.read_text() == "term"
     assert parent_marker.read_text() == "term"
     await adapter.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX-specific")
+async def test_reaped_leader_pid_is_never_signalled_as_a_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ReapedProcess:
+        pid = 4242
+        returncode = 0
+        _transport = None
+
+        async def wait(self) -> int:
+            return 0
+
+    signals: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: signals.append((pgid, sig)))
+    await _terminate_process_group(ReapedProcess(), 0.1)  # type: ignore[arg-type]
+    assert signals == []
 
 
 @pytest.mark.asyncio

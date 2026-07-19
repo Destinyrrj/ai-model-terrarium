@@ -1,10 +1,14 @@
 # Claude Code runtime
 
 The `claude-code` runtime invokes the official Claude Code binary in headless
-mode. One Terrarium agent maps to one deterministic Claude Code session. The
-first action uses `--session-id`; later actions and the deathbed use `--resume`.
-This also survives a Terrarium checkpoint/resume, provided Claude Code has kept
-the session in the same OS user's account.
+mode. Every call uses `--no-session-persistence` and receives the complete
+checkpointed `AgentContext`.
+
+Persistent Claude Code sessions are intentionally not used. They cannot join
+Terrarium's atomic event-log commit: a timeout or crash can persist a provider
+turn while its world tick remains uncommitted. Resuming that session would
+silently diverge from replay, while recreating a deterministic session ID is
+non-idempotent. The Terrarium checkpoint is therefore the sole lifetime memory.
 
 This runtime is intentionally host-owned and is not the generic sandboxed
 subprocess adapter. Run it as a dedicated OS user. Claude Code owns that user's
@@ -47,8 +51,8 @@ sha256sum "$(readlink -f "$(command -v claude)")"
 JSON output is schema-constrained by Claude Code and validated again by the
 Terrarium boundary. Reported input, cache-read, cache-creation, and output tokens
 feed the existing budget governor; `total_cost_usd` is retained as adapter
-metadata. Missing usage fails closed. A missing or externally compacted/deleted
-Claude session is an audited adapter failure, not a silent stateless fallback.
+metadata. Missing usage fails closed. Provider-side context compaction and
+external session deletion cannot affect replay.
 
 For a scale rehearsal, start with the three-generation pilot and inspect mortality,
 legacy text quality, failure rate, and token usage before increasing cohort count.

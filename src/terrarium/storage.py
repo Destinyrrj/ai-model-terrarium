@@ -1462,7 +1462,13 @@ class EventStore:
                 "response_id": response_id,
                 "response": response_value,
             }
-            data = canonical_json_bytes(record) + b"\n"
+            try:
+                data = canonical_json_bytes(record) + b"\n"
+            except (EventValidationError, UnicodeError) as exc:
+                # A hostile response can pass json.loads yet still be
+                # unencodable UTF-8 (lone surrogate escapes).  Raw capture must
+                # drop it as a recorded rejection, never crash the tick.
+                raise RawResponseError(f"response is not encodable JSON: {exc}") from exc
             if len(data) > self.max_raw_bytes:
                 raise RawResponseError(
                     f"raw response is {len(data)} bytes; limit is {self.max_raw_bytes}"

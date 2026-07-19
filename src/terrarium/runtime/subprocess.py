@@ -249,8 +249,7 @@ def sanitize_terminal_text(value: bytes | str, *, max_chars: int = 8_192) -> str
     text = "".join(
         character
         for character in text
-        if character in {"\n", "\t"}
-        or unicodedata.category(character) not in {"Cc", "Cf", "Cs"}
+        if character in {"\n", "\t"} or unicodedata.category(character) not in {"Cc", "Cf", "Cs"}
     )
     if len(text) > max_chars:
         return text[:max_chars] + "\n[truncated]"
@@ -398,9 +397,7 @@ class RuntimeLimits:
 
 
 _ENV_NAME_RE: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-_RESERVED_ENV: Final = frozenset(
-    {"HOME", "TMPDIR", "TMP", "TEMP", "PWD", "OLDPWD", "SHLVL", "_"}
-)
+_RESERVED_ENV: Final = frozenset({"HOME", "TMPDIR", "TMP", "TEMP", "PWD", "OLDPWD", "SHLVL", "_"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -682,8 +679,7 @@ def _uid_process_ceiling(requested_headroom: int, proc_root: Path = Path("/proc"
                     # kernel accounting unit is a task (thread), not a PID.
                     with os.scandir(Path(entry.path) / "task") as tasks:
                         current += sum(
-                            task.name.isdecimal()
-                            and task.is_dir(follow_symlinks=False)
+                            task.name.isdecimal() and task.is_dir(follow_symlinks=False)
                             for task in tasks
                         )
                 except FileNotFoundError:
@@ -809,7 +805,10 @@ async def _terminate_process_group(
 ) -> None:
     """TERM then KILL the dedicated session and always reap its leader."""
 
-    if os.name == "posix":
+    # Never address a numeric process group after asyncio has observed/reaped
+    # its leader. The kernel may already have recycled that PID/PGID for an
+    # unrelated same-UID process group.
+    if os.name == "posix" and process.returncode is None:
         process_group = process.pid  # start_new_session=True makes pid == pgid.
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process_group, signal.SIGTERM)
@@ -818,7 +817,7 @@ async def _terminate_process_group(
         if _process_group_exists(process_group):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(process_group, signal.SIGKILL)
-    elif process.returncode is None:  # pragma: no cover - Windows fallback
+    elif os.name != "posix" and process.returncode is None:  # pragma: no cover
         process.kill()
     with contextlib.suppress(ProcessLookupError):
         await process.wait()
@@ -922,9 +921,7 @@ class SubprocessAgentAdapter:
             "adapter": "subprocess",
             "sandbox_backend": str(self.sandbox.backend),
             "filesystem_isolated": not process_mode,
-            "network_isolated": (
-                not process_mode and self.sandbox.network is NetworkMode.NONE
-            ),
+            "network_isolated": (not process_mode and self.sandbox.network is NetworkMode.NONE),
             "resource_limits_best_effort": process_mode,
         }
         if self.sandbox.egress_proxy_marker is not None:
@@ -983,9 +980,7 @@ class SubprocessAgentAdapter:
     async def _invoke(self, operation: str, payload: JSONValue) -> AdapterResult:
         async with self._call_lock:
             if self._closed:
-                return self._failure(
-                    AdapterStatus.CLOSED, "adapter_closed", "adapter is closed"
-                )
+                return self._failure(AdapterStatus.CLOSED, "adapter_closed", "adapter is closed")
             try:
                 request = _encode_request(
                     {"operation": operation, "payload": payload},
@@ -1058,7 +1053,10 @@ class SubprocessAgentAdapter:
                         retryable=True,
                     )
 
-                # A successful leader must not leave background descendants behind.
+                # If the leader is still live, terminate its complete group. If
+                # asyncio has already reaped it, _terminate_process_group only
+                # closes transport state: signalling a recycled numeric PGID
+                # would risk killing an unrelated process.
                 await _terminate_process_group(process, self.limits.termination_grace_seconds)
                 if returncode != 0:
                     raw = stderr if stderr else stdout

@@ -26,10 +26,12 @@ from .measurement import (
     LexicalKnowledgeClassifier,
     MeasurementBasis,
     authored_measurement_records,
+    behavior_adoption_curve,
     extract_inherited_exposures,
     extract_legacies,
     iter_committed_events,
     knowledge_survival_curve,
+    write_behavior_measurements,
     write_measurements,
 )
 from .replay import ReplayError, load_manifest_config, replay_run
@@ -156,7 +158,12 @@ def _command_measure(args: argparse.Namespace) -> dict[str, object]:
         expected_channels=("written",),
         expected_bases=tuple(MeasurementBasis),
     )
+    behavior_points = behavior_adoption_curve(
+        events,
+        expected_generations=range(sealed.population.generations),
+    )
     write_measurements(points, destination)
+    write_behavior_measurements(behavior_points, destination)
     return {
         "command": "measure",
         "status": "ok",
@@ -165,6 +172,7 @@ def _command_measure(args: argparse.Namespace) -> dict[str, object]:
         "legacies": len(legacies),
         "inherited_exposures": len(inherited),
         "points": len(points),
+        "behavior_points": len(behavior_points),
         "output": str(destination),
     }
 
