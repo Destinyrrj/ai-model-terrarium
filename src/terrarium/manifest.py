@@ -54,7 +54,7 @@ class RunManifest(BaseModel):
         executable_path: str | None = None
         executable_hash: str | None = None
         argv_file_hashes: dict[str, str] = {}
-        if config.runtime.adapter == "subprocess":
+        if config.runtime.adapter in {"subprocess", "claude-code"}:
             resolved = shutil.which(config.runtime.argv[0])
             if resolved is None:
                 raise FileNotFoundError(f"adapter executable not found: {config.runtime.argv[0]}")

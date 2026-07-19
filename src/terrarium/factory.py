@@ -10,6 +10,7 @@ from pathlib import Path
 from .config import RunConfig
 from .prompting import AgentContext
 from .runtime.base import AgentAdapter
+from .runtime.claude_code import ClaudeCodeAgentAdapter
 from .runtime.mock import DeterministicMockAdapter
 from .runtime.subprocess import (
     CommandSpec,
@@ -39,6 +40,24 @@ def build_adapter_factory(config: RunConfig) -> AdapterFactory:
         return make_mock
 
     executable = _resolve_and_verify_executable(config)
+    if config.runtime.adapter == "claude-code":
+        def make_claude(context: AgentContext) -> AgentAdapter:
+            return ClaudeCodeAgentAdapter(
+                executable=executable,
+                executable_sha256=config.runtime.executable_sha256 or "",
+                model=config.runtime.model_id,
+                run_id=config.run_id,
+                context=context,
+                limits=RuntimeLimits(
+                    timeout_seconds=config.runtime.timeout_seconds,
+                    max_input_bytes=config.runtime.max_input_bytes,
+                    max_stdout_bytes=config.runtime.max_output_bytes,
+                    max_stderr_bytes=config.runtime.max_stderr_bytes,
+                ),
+            )
+
+        return make_claude
+
     command = CommandSpec(
         argv=(executable, *config.runtime.argv[1:]),
         allowed_executables=frozenset({executable}),

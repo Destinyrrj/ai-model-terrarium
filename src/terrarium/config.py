@@ -132,7 +132,7 @@ class SandboxConfig(StrictModel):
 
 
 class RuntimeConfig(StrictModel):
-    adapter: Literal["mock", "subprocess"]
+    adapter: Literal["mock", "subprocess", "claude-code"]
     argv: tuple[str, ...] = ()
     executable_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     provider: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
@@ -157,11 +157,18 @@ class RuntimeConfig(StrictModel):
                 raise ValueError("mock adapter requires the mock sandbox")
         else:
             if not self.argv:
-                raise ValueError("subprocess adapter requires a fixed argv")
+                raise ValueError("real adapter requires a fixed argv")
             if self.executable_sha256 is None:
-                raise ValueError("subprocess executable must be pinned by SHA-256")
+                raise ValueError("real adapter executable must be pinned by SHA-256")
             if self.sandbox.backend == "mock":
                 raise ValueError("subprocess adapter cannot use the mock sandbox")
+            if self.adapter == "claude-code":
+                if len(self.argv) != 1:
+                    raise ValueError("claude-code argv may contain only the executable")
+                if self.sandbox.backend != "process":
+                    raise ValueError("claude-code OAuth requires the acknowledged process backend")
+                if self.sandbox.network != "inherit":
+                    raise ValueError("claude-code requires inherited network access")
         return self
 
 

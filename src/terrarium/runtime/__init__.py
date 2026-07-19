@@ -1,6 +1,7 @@
 """Safe model-adapter boundary for AI Model Terrarium."""
 
 from .base import AdapterError, AdapterResult, AdapterStatus, AgentAdapter, JSONScalar, JSONValue
+from .claude_code import ClaudeCodeAgentAdapter
 from .mock import DeterministicMockAdapter, MockAdapter
 from .subprocess import (
     CommandNotAllowed,
@@ -30,6 +31,7 @@ __all__ = [
     "AdapterResult",
     "AdapterStatus",
     "AgentAdapter",
+    "ClaudeCodeAgentAdapter",
     "CommandNotAllowed",
     "CommandSpec",
     "DangerousSandboxPolicy",

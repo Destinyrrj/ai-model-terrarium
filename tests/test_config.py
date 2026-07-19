@@ -61,13 +61,37 @@ def test_process_backend_needs_explicit_acknowledgement(tmp_path: Path) -> None:
         load_config(path)
 
 
+def test_claude_code_requires_single_pinned_executable_and_host_boundary() -> None:
+    config = load_config("configs/mvp.yaml")
+    runtime = config.runtime.model_copy(
+        update={
+            "adapter": "claude-code",
+            "argv": ("/usr/bin/claude",),
+            "executable_sha256": "0" * 64,
+            "sandbox": config.runtime.sandbox.model_copy(
+                update={
+                    "backend": "process",
+                    "network": "inherit",
+                    "acknowledge_unsafe_host_execution": True,
+                }
+            ),
+        }
+    )
+    validated = type(runtime).model_validate(runtime.model_dump(mode="python"))
+    assert validated.adapter == "claude-code"
+
+    with pytest.raises(ValidationError, match="only the executable"):
+        type(runtime).model_validate(
+            {**runtime.model_dump(mode="python"), "argv": ["claude", "--bare"]}
+        )
+
+
 def test_proxy_label_needs_external_enforcement_attestation(tmp_path: Path) -> None:
     original = Path("configs/mvp.yaml").read_text(encoding="utf-8")
     changed = original.replace("network: none", "network: provider-proxy")
     changed = changed.replace(
         "acknowledge_unsafe_host_execution: false",
-        "egress_proxy: http://broker.invalid:8080\n"
-        "    acknowledge_unsafe_host_execution: false",
+        "egress_proxy: http://broker.invalid:8080\n    acknowledge_unsafe_host_execution: false",
     )
     path = tmp_path / "unforced-proxy.yaml"
     path.write_text(changed, encoding="utf-8")
@@ -84,9 +108,7 @@ def test_proxy_label_needs_external_enforcement_attestation(tmp_path: Path) -> N
         "https://broker.invalid:8443/secret",
     ],
 )
-def test_proxy_url_cannot_smuggle_credentials_into_manifest(
-    tmp_path: Path, proxy: str
-) -> None:
+def test_proxy_url_cannot_smuggle_credentials_into_manifest(tmp_path: Path, proxy: str) -> None:
     original = Path("configs/mvp.yaml").read_text(encoding="utf-8")
     changed = original.replace("network: none", "network: provider-proxy")
     changed = changed.replace(

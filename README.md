@@ -23,6 +23,7 @@ Invalid, late or oversized model output becomes a recorded no-op.
 - checkpoint/resume, deterministic replay and a concurrency-safe model-call gate;
 - fail-closed accounting of adapter-reported token usage;
 - deterministic mock agents for safe end-to-end and CI runs;
+- a stateful, tool-free Claude Code headless runtime with per-agent resumable sessions;
 - an offline lexical knowledge-survival baseline;
 - a static, escaped viewer export which never exposes raw reasoning.
 
@@ -79,6 +80,12 @@ the executable digest, model ID and sandbox policy are sealed into the run
 manifest and drift causes resume to fail.
 The exact one-shot JSON contract is documented in
 [`docs/adapter-protocol.md`](docs/adapter-protocol.md).
+The subscription-compatible stateful Claude Code runtime and its deliberately
+explicit host-execution boundary are documented in
+[`docs/claude-code.md`](docs/claude-code.md). `configs/pilot.yaml` enables lethal
+starvation and collapse and combines up to three inherited records for a short
+selection-bearing rehearsal; it remains mock-backed until its runtime section is
+intentionally replaced and sealed.
 The mock validates the pipeline and safety invariants; it is not scientific
 evidence that knowledge survived across generations.
 
