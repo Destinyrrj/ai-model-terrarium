@@ -6,6 +6,18 @@ The GUI is a loopback-only FastAPI server with a React/Vite client.  It lives in
 
 ## Install and run
 
+From the repository root, the launcher performs the locked dependency sync,
+builds the frontend when necessary, and starts the server:
+
+```bash
+./scripts/start-gui.sh
+```
+
+Extra server arguments are forwarded, for example
+`./scripts/start-gui.sh --port 8877 --artifacts-root /tmp/terrarium-gui`.
+
+The equivalent manual commands are:
+
 ```bash
 UV_CACHE_DIR=/tmp/terrarium-uv-cache uv sync --project gui --group dev
 cd gui/frontend
