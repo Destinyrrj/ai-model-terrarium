@@ -15,6 +15,8 @@ dist/
 build/
 runs/
 tmp/
+configs/*.local.yaml
+.tiktoken-cache/
 *.sqlite3
 *.sqlite3-shm
 *.sqlite3-wal

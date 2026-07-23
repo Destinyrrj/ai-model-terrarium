@@ -99,10 +99,15 @@ The exact one-shot JSON contract is documented in
 [`docs/adapter-protocol.md`](docs/adapter-protocol.md).
 The subscription-compatible Claude Code runtime, checkpoint-authoritative memory,
 and deliberately explicit host-execution boundary are documented in
-[`docs/claude-code.md`](docs/claude-code.md). `configs/pilot.yaml` enables lethal
-starvation and collapse and combines up to three inherited records for a short
-selection-bearing rehearsal; it remains mock-backed until its runtime section is
-intentionally replaced and sealed.
+[`docs/claude-code.md`](docs/claude-code.md), whose "First real-model run" runbook
+walks through host prerequisites, tokenizer-cache seeding, and sealing a config.
+`configs/pilot.yaml` enables lethal starvation and collapse and combines up to
+three inherited records for a short selection-bearing rehearsal; it remains
+mock-backed until its runtime section is intentionally replaced and sealed. To
+seal a real Claude Code pilot against your host, run
+`scripts/seal-claude-config.sh` (renders `configs/pilot-claude.yaml.template`
+into a gitignored `configs/*.local.yaml`, pinning the resolved `claude` binary
+and its sha256).
 The mock validates the pipeline and safety invariants; it is not scientific
 evidence that knowledge survived across generations.
 
