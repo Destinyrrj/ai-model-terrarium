@@ -1,0 +1,87 @@
+# Template for a real Claude Code-backed pilot run.
+#
+# DO NOT run this file directly and DO NOT commit a filled-in copy: the two
+# placeholders below are host-specific (the absolute path to your installed
+# `claude` binary and that exact binary's sha256). Seal them against your host
+# with:
+#
+#   scripts/seal-claude-config.sh
+#
+# which resolves the executable, pins its digest, schema-validates the result,
+# verifies the digest matches, and writes a gitignored configs/*.local.yaml
+# ready for `terrarium run`. See docs/claude-code.md ("First real-model run").
+#
+# Everything except the `runtime` block matches configs/pilot.yaml: a short,
+# selection-bearing three-generation rehearsal with lethal hazards.
+schema_version: 1
+run_id: pilot-claude
+seed: 731993
+
+world:
+  valley: valley_a
+  initial_location: valley_a/grove
+  rain_probability: 0.18
+  initial_food_per_location: 24
+  hunger_per_tick: 4
+  starvation_damage: 15
+  # Selection-bearing pilot: all three environmental hazards can terminate a life.
+  starvation_lethal: true
+  poison_damage: 40
+  collapse_probability: 0.4
+  collapse_lethal: true
+  decoy_birth_tick: 5
+
+population:
+  size: 6
+  generations: 3
+  lifespan_ticks: 30
+  legacy_tokens: 500
+  # May combine same-lineage and cross-lineage records, including contradictions.
+  inherited_legacies: 3
+  tokenizer: cl100k_base
+
+runtime:
+  adapter: claude-code
+  # Sealed by scripts/seal-claude-config.sh — the resolved binary and its digest.
+  argv: ["__CLAUDE_EXECUTABLE__"]
+  executable_sha256: "__CLAUDE_SHA256__"
+  provider: anthropic-claude-code
+  model_id: sonnet
+  timeout_seconds: 180
+  max_input_bytes: 1048576
+  max_output_bytes: 65536
+  max_stderr_bytes: 16384
+  sandbox:
+    # Claude Code owns OAuth/keychain on the host, so the boundary is explicit
+    # and acknowledged. Run as a dedicated OS user behind an egress proxy that
+    # holds provider credentials (see docs/claude-code.md).
+    backend: process
+    network: inherit
+    acknowledge_unsafe_host_execution: true
+
+budget:
+  # Real spend, unlike the mock configs. These are bounded ceilings sized to let
+  # a 6-agent / 3-generation pilot finish with headroom; the governor fails
+  # closed when any is exceeded. Tune them down to your spend tolerance.
+  max_calls: 4000
+  max_input_tokens: 40000000
+  max_output_tokens: 5000000
+  max_failures: 200
+
+storage:
+  raw_responses: false
+  max_raw_bytes: 65536
+
+knowledge:
+  - id: red_berries_after_rain
+    statement: Red berries are poisonous after recent rain.
+    kind: true_rule
+    keywords: [red, berries, poisonous, rain]
+  - id: deep_dig_collapse
+    statement: Digging deeper than three levels sometimes causes a collapse.
+    kind: probabilistic_rule
+    keywords: [digging, deeper, three, collapse]
+  - id: raven_death_omen
+    statement: Seeing a raven foretells a nearby death.
+    kind: decoy
+    keywords: [raven, death]
